@@ -1,0 +1,4 @@
+User-agenys: *
+Allow: /
+
+Sitemap: https://kin0ms.netlify.app/sitemap.xml
