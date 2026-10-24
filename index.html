@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jasper Kinomnga | Portfolio</title>
+    <style>
+        :root {
+            --bg-color: #000000;
+            --card-bg: rgba(26, 26, 26, 0.45);
+            --accent-color: #f5deb3;
+            --off-white: #faf0e6;
+            --muted-text: #d2b48c;
+            --border-color: rgba(245, 222, 179, 0.15);
+            --border-hover: rgba(245, 222, 179, 0.4);
+        }
+        * { box-sizing: border-box; }
+        html, body { width: 100%; height: 100%; margin: 0; background: var(--bg-color); }
+        #pageFrame { display: block; width: 100%; height: 100%; border: 0; }
+        .floating-music-player {
+            position: fixed;
+            cursor: grab;
+            user-select: none;
+            right: 24px;
+            bottom: 24px;
+            width: min(340px, calc(100vw - 24px));
+            min-height: 132px;
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            overflow: hidden;
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 16px;
+            padding: 18px;
+            text-align: left;
+            color: var(--accent-color);
+            box-shadow: 0 18px 45px rgba(0,0,0,.45);
+            z-index: 9999;
+            touch-action: none;
+        }
+        .music-toggle {
+            width: 48px;
+            height: 48px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid var(--border-hover);
+            border-radius: 50%;
+            background: rgba(245, 222, 179, 0.08);
+            color: var(--accent-color);
+            cursor: pointer;
+            transition: background .3s ease, transform .3s ease;
+        }
+        .music-toggle:hover { background: rgba(245,222,179,.16); transform: scale(1.05); }
+        .music-toggle svg { width: 21px; height: 21px; fill: currentColor; }
+        .pause-icon { display: none; }
+        .floating-music-player.is-playing .play-icon { display: none; }
+        .floating-music-player.is-playing .pause-icon { display: block; }
+        .music-details { flex: 1; min-width: 0; cursor: grab; }
+        .music-toggle { cursor: pointer; }
+        .music-label { display: block; margin-bottom: 5px; color: var(--muted-text); font-size: 10px; letter-spacing: 3px; }
+        .music-title { display: block; margin-bottom: 10px; color: var(--off-white); font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+        .sound-wave { width: 100%; height: 24px; display: flex; align-items: center; justify-content: space-between; gap: 3px; overflow: hidden; }
+        .sound-wave span { display: block; flex: 1; min-width: 2px; height: 2px; border-radius: 3px; background: var(--accent-color); transition: height .08s linear; }
+        @media (max-width: 600px) {
+            .floating-music-player { right: 12px; bottom: 12px; min-height: 112px; gap: 12px; padding: 14px; border-radius: 16px; }
+            .music-toggle { width: 42px; height: 42px; }
+            .music-title { font-size: 13px; margin-bottom: 8px; }
+            .music-label { font-size: 9px; letter-spacing: 2px; }
+        }
+    </style>
+</head>
+<body>
+    <iframe id="pageFrame" src="home.html" title="Portfolio pages"></iframe>
+
+    <div class="floating-music-player" id="floatingMusicPlayer">
+        <audio id="portfolioMusic" src="music.mp3" preload="metadata"></audio>
+        <button class="music-toggle" id="musicToggle" type="button" aria-label="Play music" aria-pressed="false">
+            <svg class="play-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"></path></svg>
+            <svg class="pause-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zM15 5h4v14h-4z"></path></svg>
+        </button>
+        <div class="music-details" id="playerDragHandle" title="Drag to move player">
+            <span class="music-label">NOW PLAYING</span>
+            <span class="music-title">Portfolio Soundtrack</span>
+            <div class="sound-wave" id="soundWave" aria-hidden="true">
+                <span></span><span></span><span></span><span></span><span></span><span></span>
+                <span></span><span></span><span></span><span></span><span></span><span></span>
+                <span></span><span></span><span></span><span></span><span></span><span></span>
+                <span></span><span></span><span></span><span></span><span></span><span></span>
+                <span></span><span></span><span></span><span></span><span></span><span></span>
+                <span></span><span></span><span></span><span></span><span></span><span></span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const music = document.getElementById('portfolioMusic');
+        const player = document.getElementById('floatingMusicPlayer');
+        const toggle = document.getElementById('musicToggle');
+        const bars = document.querySelectorAll('#soundWave span');
+        let audioContext;
+        let analyser;
+        let frequencyData;
+        let source;
+        let animationFrame;
+
+        function setPlayerState(playing) {
+            player.classList.toggle('is-playing', playing);
+            toggle.setAttribute('aria-pressed', String(playing));
+            toggle.setAttribute('aria-label', playing ? 'Pause music' : 'Play music');
+            if (!playing) {
+                cancelAnimationFrame(animationFrame);
+                bars.forEach(bar => bar.style.height = '2px');
+            }
+        }
+
+        function setupAnalyser() {
+            if (analyser) return;
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContextClass) throw new Error('Audio analysis is not supported in this browser.');
+            audioContext = new AudioContextClass();
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = 128;
+            analyser.smoothingTimeConstant = 0.75;
+            source = audioContext.createMediaElementSource(music);
+            source.connect(analyser);
+            analyser.connect(audioContext.destination);
+            frequencyData = new Uint8Array(analyser.frequencyBinCount);
+        }
+
+        function animateWave() {
+            if (!analyser || music.paused || music.ended) {
+                setPlayerState(false);
+                return;
+            }
+            analyser.getByteFrequencyData(frequencyData);
+            bars.forEach((bar, i) => {
+                const index = Math.floor(i * frequencyData.length / bars.length);
+                bar.style.height = (2 + (frequencyData[index] / 255) * 34) + 'px';
+            });
+            animationFrame = requestAnimationFrame(animateWave);
+        }
+
+        toggle.addEventListener('click', async () => {
+            if (music.paused) {
+                try {
+                    setupAnalyser();
+                    if (audioContext.state === 'suspended') await audioContext.resume();
+                    await music.play();
+                    setPlayerState(true);
+                    cancelAnimationFrame(animationFrame);
+                    animateWave();
+                } catch (error) {
+                    setPlayerState(false);
+                    console.error('Unable to play music:', error);
+                    alert('Could not play music. Check that music.mp3 is in the same folder as index.html.');
+                }
+            } else {
+                music.pause();
+                setPlayerState(false);
+            }
+        });
+        music.addEventListener('pause', () => setPlayerState(false));
+        music.addEventListener('ended', () => setPlayerState(false));
+        setPlayerState(false);
+
+        // Drag the player from anywhere except the play/pause button.
+        const dragHandle = document.getElementById('playerDragHandle');
+        let dragging = false;
+        let pointerOffsetX = 0;
+        let pointerOffsetY = 0;
+
+        player.addEventListener('pointerdown', event => {
+            if (event.target.closest('#musicToggle')) return;
+            const rect = player.getBoundingClientRect();
+            dragging = true;
+            pointerOffsetX = event.clientX - rect.left;
+            pointerOffsetY = event.clientY - rect.top;
+            player.style.right = 'auto';
+            player.style.bottom = 'auto';
+            player.style.left = rect.left + 'px';
+            player.style.top = rect.top + 'px';
+            player.style.cursor = 'grabbing';
+            event.preventDefault();
+        });
+
+        window.addEventListener('pointermove', event => {
+            if (!dragging) return;
+            const maxLeft = Math.max(0, window.innerWidth - player.offsetWidth);
+            const maxTop = Math.max(0, window.innerHeight - player.offsetHeight);
+            const left = Math.max(0, Math.min(maxLeft, event.clientX - pointerOffsetX));
+            const top = Math.max(0, Math.min(maxTop, event.clientY - pointerOffsetY));
+            player.style.left = left + 'px';
+            player.style.top = top + 'px';
+        });
+
+        function stopDragging() {
+            dragging = false;
+            player.style.cursor = 'grab';
+        }
+
+        window.addEventListener('pointerup', stopDragging);
+        window.addEventListener('pointercancel', stopDragging);
+
+        window.addEventListener('resize', () => {
+            if (!player.style.left) return;
+            const rect = player.getBoundingClientRect();
+            player.style.left = Math.max(0, Math.min(window.innerWidth - player.offsetWidth, rect.left)) + 'px';
+            player.style.top = Math.max(0, Math.min(window.innerHeight - player.offsetHeight, rect.top)) + 'px';
+        });
+    </script>
+</body>
+</html>
